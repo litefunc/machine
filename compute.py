@@ -159,8 +159,8 @@ for col in real_cols:
 
 #df.dtypes
 
-mysum = conn_local_pg('mysum')
-cur = mysum.cursor()
+tse = conn_local_pg('tse')
+cur = tse.cursor()
 
 ## create table
 p_keys = ', '.join(['年月日', '證券代號'])
@@ -173,18 +173,18 @@ for t in dtypes.keys():
     
     
 columns = ', '.join(__columns)
-sql = f'create table "{table}" ({columns}, PRIMARY KEY({p_keys}))'
+sql = f'create table if not exists "{table}" ({columns}, PRIMARY KEY({p_keys}))'
 cur.execute(sql)
 
 #g.get_group('5522')
 
-delete.Delete('compute').run(mysum)
+delete.Delete('compute').run(tse)
 
 g = df.round(4).groupby(keys)
 start = dt.datetime.now()
 for group in g.groups:
     print(group)
-    insert.Insert(table, cols).run(mysum, g.get_group(group))
+    insert.Insert(table, cols).run(tse, g.get_group(group))
 
 print('Complete in {} second(s)'.format(dt.datetime.now()-start))
 
@@ -243,28 +243,28 @@ print('Complete in {} second(s)'.format(dt.datetime.now()-start))
 #np.inf
 #10**15
 #max([1,2])
-mysum.commit()
+tse.commit()
 #g[['年月日', '證券代號',  '開盤價']].get_group('5522')
 #df.groupby(keys)[['ch_u', 'ch_d']]
 #df['ch_u', 'ch_d']
 #g.size()
-list(df)
-
-df1 = select.saw(table, {'證券代號':'5522'}).df(mysum)
-tse = conn_local_pg('tse')
-df2 = select.saw('每日收盤行情(全部(不含權證、牛熊證))', {'證券代號':'5522'}).df(tse)
-list(df2)
-df3 = select.sw(['年月日', '證券代號', '殖利率(%%)', '本益比', '股價淨值比'], '個股日本益比、殖利率及股價淨值比', {'證券代號':'5522'}).df(tse)
-cols1=', '.join([f'a."{col}"' for col in list(df)])
-cols2=', '.join([f'b."{col}"' for col in ['殖利率(%%)', '本益比', '股價淨值比']])
-cols3=', '.join([f'c."{col}"' for col in ['開盤價', '最高價', '最低價', '收盤價', '成交股數', '成交筆數', '成交金額']])
-table1 = 'compute'
-table2 = '個股日本益比、殖利率及股價淨值比'
-table3 = '每日收盤行情(全部(不含權證、牛熊證))'
-sql = f'''create view test as select {cols1}, {cols2}, {cols3} from "{table1}" as a full outer join "{table2}" as b on a."年月日"=b."年月日" and a."證券代號"=b."證券代號" full outer join "{table3}" as c on a."年月日"=c."年月日" and a."證券代號"=c."證券代號"'''
-
-cur = mysum.cur
-
-select.sw(list(df),'compute', {'證券代號':'5522'}).df(mysum)
-
-df4= select.saw('compute', {'證券代號':'5522'}).df(tse)
+# list(df)
+#
+# df1 = select.saw(table, {'證券代號':'5522'}).df(mysum)
+# tse = conn_local_pg('tse')
+# df2 = select.saw('每日收盤行情(全部(不含權證、牛熊證))', {'證券代號':'5522'}).df(tse)
+# list(df2)
+# df3 = select.sw(['年月日', '證券代號', '殖利率(%%)', '本益比', '股價淨值比'], '個股日本益比、殖利率及股價淨值比', {'證券代號':'5522'}).df(tse)
+# cols1=', '.join([f'a."{col}"' for col in list(df)])
+# cols2=', '.join([f'b."{col}"' for col in ['殖利率(%%)', '本益比', '股價淨值比']])
+# cols3=', '.join([f'c."{col}"' for col in ['開盤價', '最高價', '最低價', '收盤價', '成交股數', '成交筆數', '成交金額']])
+# table1 = 'compute'
+# table2 = '個股日本益比、殖利率及股價淨值比'
+# table3 = '每日收盤行情(全部(不含權證、牛熊證))'
+# sql = f'''create view test as select {cols1}, {cols2}, {cols3} from "{table1}" as a full outer join "{table2}" as b on a."年月日"=b."年月日" and a."證券代號"=b."證券代號" full outer join "{table3}" as c on a."年月日"=c."年月日" and a."證券代號"=c."證券代號"'''
+#
+# cur = mysum.cur
+#
+# select.sw(list(df),'compute', {'證券代號':'5522'}).df(mysum)
+#
+# df4= select.saw('compute', {'證券代號':'5522'}).df(tse)

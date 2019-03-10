@@ -141,15 +141,16 @@ trust = s_by_id(tse, '投信買賣超彙總表 (股)').drop(['證券名稱'], 1)
 
 # deal = read_msgpack(r.get("deal:{}".format(companyId)))
 # deal[['自營商(自行買賣)賣出股數', '自營商(自行買賣)買賣超股數', '自營商(自行買賣)買進股數', '自營商(避險)賣出股數', '自營商(避險)買賣超股數', '自營商(避險)買進股數', '自營商賣出股數', '自營商買賣超股數', '自營商買進股數']] = deal[['自營商(自行買賣)賣出股數', '自營商(自行買賣)買賣超股數', '自營商(自行買賣)買進股數', '自營商(避險)賣出股數', '自營商(避險)買賣超股數', '自營商(避險)買進股數', '自營商賣出股數', '自營商買賣超股數', '自營商買進股數']].fillna(0)
-index = pd.read_sql_query('SELECT * FROM "{}" '.format('大盤統計資訊-收盤指數'), tse)
-indexp = pd.read_sql_query('SELECT * FROM "{}" '.format('大盤統計資訊-漲跌百分比'), tse)
-# indexp.columns = ['年月日'] + [col + '-漲跌百分比' for col in indexp.columns if col != '年月日']
-indexp = indexp.rename(columns=cytoolz.merge([{col: col + '-漲跌百分比'} for col in indexp.columns if col != '年月日']))
+index = pd.read_sql_query('SELECT * FROM "{}" '.format('index'), tse)
+# index = pd.read_sql_query('SELECT * FROM "{}" '.format('大盤統計資訊-收盤指數'), tse)
+# indexp = pd.read_sql_query('SELECT * FROM "{}" '.format('大盤統計資訊-漲跌百分比'), tse)
+# # indexp.columns = ['年月日'] + [col + '-漲跌百分比' for col in indexp.columns if col != '年月日']
+# indexp = indexp.rename(columns=cytoolz.merge([{col: col + '-漲跌百分比'} for col in indexp.columns if col != '年月日']))
 xdr = s_by_id(tse, '除權息計算結果表')
 
 timeDelta('tse')
 
-m = cytoolz.reduce(mymerge, [close, value, fore, trust, index, indexp, report, xdr])
+m = cytoolz.reduce(mymerge, [close, value, fore, trust, index, report, xdr])
 
 #m = cytoolz.reduce(mymerge, [close, value, fore, trust, index, index1, rindex, report, xdr])
 timeDelta('merge')
@@ -222,22 +223,26 @@ m = m.dropna(axis=1, how='all')
 bi = conn_local_pg('bic')
 
 bic = pd.read_sql_query('SELECT * FROM "{}"'.format('景氣指標及燈號-指標構成項目'), bi).drop(['年月'], 1)
+bic['年'] = bic['年'].astype(int)
+bic['月'] = bic['月'].astype(int)
 
 m['年月日'] = m['年月日'].astype(str)
 m['年'], m['月'] = m['年月日'].str.split('-').str[0].astype(int), m['年月日'].str.split('-').str[1].astype(int)
-# m.dtypes
+# bic.dtypes
 m = mymerge(m, bic)
 del m['年'], m['月'], bic['年'], bic['月']
 m.年月日 = pd.to_datetime(m.年月日, format='%Y-%m-%d').apply(lambda x: x.date())
+
 
 # return
 @timeSpan
 def Return(df, cols, periods):
     for col in cols:
         for days in periods:
-            n = 240/days
-            df['r' + str(days) + '.' + col] = (df[col].shift(-days)/df[col])**n-1
-            
+            n = 240 / days
+            df['r' + str(days) + '.' + col] = (df[col].shift(-days) / df[col]) ** n - 1
+
+
 Return(m, ['調整收盤價'], [5, 10, 20, 40, 60, 120])
 
 
@@ -246,54 +251,62 @@ Return(m, ['調整收盤價'], [5, 10, 20, 40, 60, 120])
 def lnReturn(df, cols, periods):
     for col in cols:
         for days in periods:
-            n = 240/days
-            df['lnr' + str(days) + '.' + col] = np.log(df[col].shift(-days)/df[col])*n
-            
+            n = 240 / days
+            df['lnr' + str(days) + '.' + col] = np.log(df[col].shift(-days) / df[col]) * n
+
+
 lnReturn(m, ['調整收盤價'], [5, 10, 20, 40, 60, 120])
 
 
 @timeSpan
 def Normalize(df, cols):
     for col in cols:
-        df[col + '.nmz'] = (df[col]-df[col].mean())/df[col].std()
-        
-Normalize(m, ['r5.調整收盤價', 'r10.調整收盤價', 'r20.調整收盤價', 'r40.調整收盤價', 'r60.調整收盤價', 'r120.調整收盤價'])
+        df[col + '.nmz'] = (df[col] - df[col].mean()) / df[col].std()
 
+
+Normalize(m, ['r5.調整收盤價', 'r10.調整收盤價', 'r20.調整收盤價', 'r40.調整收盤價', 'r60.調整收盤價', 'r120.調整收盤價'])
 
 # rsi
 m['ch'] = m['調整收盤價'].diff()
 m['ch_u'], m['ch_d'] = m['ch'], m['ch']
 m.ix[m.ch_u < 0, 'ch_u'] = 0
-m.ix[m.ch_d > 0, 'ch_d']= 0
+m.ix[m.ch_d > 0, 'ch_d'] = 0
 m['ch_d'] = m['ch_d'].abs()
 
 # default: adjust=True, see formula https://github.com/pandas-dev/pandas/issues/8861, when adjust=false, see formula http://www.fmlabs.com/reference/default.htm?url=RSI.htm
-m['rsi'] = m.ch_u.ewm(alpha=1/14).mean()/(m.ch_u.ewm(alpha=1/14).mean()+m.ch_d.ewm(alpha=1/14).mean())*100 #與r和凱基同
+m['rsi'] = m.ch_u.ewm(alpha=1 / 14).mean() / (
+            m.ch_u.ewm(alpha=1 / 14).mean() + m.ch_d.ewm(alpha=1 / 14).mean()) * 100  # 與r和凱基同
 m = m.drop(['ch', 'ch_u', 'ch_d'], axis=1)
+
 
 # ma
 @timeSpan
 def ma(*period):
     for n in period:
-        m['MA'+str(n)] = m['收盤價'].rolling(window=n).mean()
+        m['MA' + str(n)] = m['收盤價'].rolling(window=n).mean()
+
+
 @timeSpan
 def ma_adj(*period):
     for n in period:
-        m['MA'+str(n)+'.adj'] = m['調整收盤價'].rolling(window=n).mean()
+        m['MA' + str(n) + '.adj'] = m['調整收盤價'].rolling(window=n).mean()
+
+
 ma(5, 10, 20, 60, 120)
 ma_adj(5, 10, 20, 60, 120)
 
 # price
-m['price'] = (m['最高價']+m['最低價']+2*m['收盤價'])/4
-m['price.adj'] = (m['調整最高價']+m['調整最低價']+2*m['調整收盤價'])/4
+m['price'] = (m['最高價'] + m['最低價'] + 2 * m['收盤價']) / 4
+m['price.adj'] = (m['調整最高價'] + m['調整最低價'] + 2 * m['調整收盤價']) / 4
 
 # macd, osc
-m['EMA12'] = m['price'].ewm(alpha=2/13).mean()
-m['EMA26'] = m['price'].ewm(alpha=2/27).mean()
-m['DIF'] = m['EMA12']-m['EMA26']
+m['EMA12'] = m['price'].ewm(alpha=2 / 13).mean()
+m['EMA26'] = m['price'].ewm(alpha=2 / 27).mean()
+m['DIF'] = m['EMA12'] - m['EMA26']
 m['MACD'] = m.DIF.ewm(alpha=0.2).mean()
-m['MACD1'] = (m['EMA12']-m['EMA26'])/m['EMA26']*100
+m['MACD1'] = (m['EMA12'] - m['EMA26']) / m['EMA26'] * 100
 m['OSC'] = m.DIF - m.MACD
+
 
 # stdev
 def stdev(df, cols, periods):
@@ -301,6 +314,7 @@ def stdev(df, cols, periods):
         for p in periods:
             df[f'{col}:stdev{p}'] = df[col].rolling(window=p).std()
     return df
+
 
 m = stdev(m, ['price', 'price.adj'], [5, 10, 20])
 
@@ -312,36 +326,34 @@ m = stdev(m, ['price', 'price.adj'], [5, 10, 20])
 # bband
 m['std20'] = m['price'].rolling(window=20).std()
 m['mavg'] = m['price'].rolling(window=20).mean()
-m['up'] = m.mavg + m['std20']*2
-m['dn'] = m.mavg - m['std20']*2
-m['bband'] = (m['收盤價']-m.mavg)/m['std20']
+m['up'] = m.mavg + m['std20'] * 2
+m['dn'] = m.mavg - m['std20'] * 2
+m['bband'] = (m['收盤價'] - m.mavg) / m['std20']
 
 # bband adj
 m['std20.adj'] = m['price.adj'].rolling(window=20).std()
 m['mavg.adj'] = m['price.adj'].rolling(window=20).mean()
-m['up.adj'] = m['mavg.adj'] + m['std20.adj']*2
-m['dn.adj'] = m['mavg.adj'] - m['std20.adj']*2
-m['bband.adj'] = (m['調整收盤價']-m['mavg.adj'])/m['std20.adj']
+m['up.adj'] = m['mavg.adj'] + m['std20.adj'] * 2
+m['dn.adj'] = m['mavg.adj'] - m['std20.adj'] * 2
+m['bband.adj'] = (m['調整收盤價'] - m['mavg.adj']) / m['std20.adj']
 
 # kd
 m['max9'] = m['最高價'].rolling(window=9).max()
 m['min9'] = m['最低價'].rolling(window=9).min()
-m['rsv'] = (m['收盤價']-m.min9)/(m.max9-m.min9)
-m['k'] = m.rsv.ewm(alpha=1/3).mean()
-m['d'] = m.k.ewm(alpha=1/3).mean()
-
-
+m['rsv'] = (m['收盤價'] - m.min9) / (m.max9 - m.min9)
+m['k'] = m.rsv.ewm(alpha=1 / 3).mean()
+m['d'] = m.k.ewm(alpha=1 / 3).mean()
 
 # others
-m['high-low'] = (m['最高價']-m['最低價'])/m['收盤價']
-m['pch'] = (m['收盤價']-m['收盤價'].shift())/m['收盤價'].shift()
-m['pctB'] = (m['price']-m.dn)/(m.up-m.dn)
-m['close-up'] = (m['收盤價']-m.up)/(m['price'].rolling(window=20).std()*2)
-m['close-dn'] = (m['收盤價']-m.dn)/(m['price'].rolling(window=20).std()*2)
+m['high-low'] = (m['最高價'] - m['最低價']) / m['收盤價']
+m['pch'] = (m['收盤價'] - m['收盤價'].shift()) / m['收盤價'].shift()
+m['pctB'] = (m['price'] - m.dn) / (m.up - m.dn)
+m['close-up'] = (m['收盤價'] - m.up) / (m['price'].rolling(window=20).std() * 2)
+m['close-dn'] = (m['收盤價'] - m.dn) / (m['price'].rolling(window=20).std() * 2)
 
-m['pctB.adj'] = (m['price.adj']-m['dn.adj'])/(m['up.adj']-m['dn.adj'])
-m['close-up.adj'] = (m['調整收盤價']-m['up.adj'])/(m['price.adj'].rolling(window=20).std()*2)
-m['close-dn.adj'] = (m['調整收盤價']-m['dn.adj'])/(m['price.adj'].rolling(window=20).std()*2)
+m['pctB.adj'] = (m['price.adj'] - m['dn.adj']) / (m['up.adj'] - m['dn.adj'])
+m['close-up.adj'] = (m['調整收盤價'] - m['up.adj']) / (m['price.adj'].rolling(window=20).std() * 2)
+m['close-dn.adj'] = (m['調整收盤價'] - m['dn.adj']) / (m['price.adj'].rolling(window=20).std() * 2)
 
 timeDelta('before trend')
 
