@@ -8,7 +8,7 @@ from sklearn.model_selection import train_test_split
 from matplotlib import pyplot
 from graphviz import Source
 from bokeh.plotting import figure, show
-from pyearth import Earth
+# from pyearth import Earth
 from sklearn import ensemble
 from bokeh.plotting import figure, show, output_file
 import matplotlib.pyplot as plt
@@ -21,16 +21,18 @@ import pandas as pd
 import numpy as np
 import os
 import sys
+import sqlCommand as sqlc
+from common.connection import conn_local_lite, conn_local_pg
+import syspath
 
 if os.getenv('MY_PYTHON_PKG') not in sys.path:
     sys.path.append(os.getenv('MY_PYTHON_PKG'))
 
-import syspath
-from common.connection import conn_local_lite, conn_local_pg
-import sqlCommand as sqlc
 
+MY_PYTHON_PROJECT = os.getenv('MY_PYTHON_PROJECT')
+if MY_PYTHON_PROJECT not in sys.path:
+    sys.path.append(MY_PYTHON_PROJECT)
 
-MY_PYTHON_PROJECT = os.getenv('MY_PYTHON_PKG')
 os.chdir(f'{MY_PYTHON_PROJECT}/machine')
 
 conn_pg = conn_local_pg('mysum')
@@ -43,16 +45,20 @@ for col in cols:
     print(col)
 
 ycol = 'lnr20.調整收盤價'
-rcol = ['{}.調整收盤價'.format(col) for col in ['r5', 'r10', 'r20', 'r40', 'r60', 'r120', 'lnr5', 'lnr10', 'lnr20', 'lnr40', 'lnr60', 'lnr120']]
-rcol_normalize = ['r5.調整收盤價_nmz', 'r10.調整收盤價_nmz', 'r20.調整收盤價_nmz', 'r40.調整收盤價_nmz', 'r60.調整收盤價_nmz', 'r120.調整收盤價_nmz']
+rcol = ['{}.調整收盤價'.format(col) for col in ['r5', 'r10', 'r20', 'r40',
+                                           'r60', 'r120', 'lnr5', 'lnr10', 'lnr20', 'lnr40', 'lnr60', 'lnr120']]
+rcol_normalize = ['r5.調整收盤價.nmz', 'r10.調整收盤價.nmz', 'r20.調整收盤價.nmz',
+                  'r40.調整收盤價.nmz', 'r60.調整收盤價.nmz', 'r120.調整收盤價.nmz']
 objcol = ['年月日']
-dropcol = objcol + rcol_normalize + [col for col in rcol if col != ycol]
+dropcol = objcol + [col for col in rcol if col != ycol]
 df1 = df.drop(dropcol, 1)
 cols = list(df1)
 xcol = [col for col in cols if col != ycol]
-df1 = df1[~pd.isnull(df1[ycol])][[ycol] + xcol].replace([np.inf, -np.inf], np.nan).fillna(0).reset_index(drop=True)
+df1 = df1[~pd.isnull(df1[ycol])][[ycol] + xcol].replace([np.inf, -
+                                                         np.inf], np.nan).fillna(0).reset_index(drop=True)
 
-x_train, x_test, y_train, y_test = train_test_split(df1[xcol], df1[[ycol]], test_size=0.1, random_state=0)
+x_train, x_test, y_train, y_test = train_test_split(
+    df1[xcol], df1[[ycol]], test_size=0.1, random_state=0)
 
 # ----tree----
 
@@ -65,13 +71,16 @@ for i in range(1, 100, 2):
     alpha = i/1000
     params = {'min_impurity_decrease': alpha}     # complexity parameter
     clf = tree.DecisionTreeRegressor(**params)
-    mse = np.mean(-cross_val_score(clf, x_train, y_train, cv=kf, scoring='neg_mean_squared_error'))  # sklearn put '-' in front of mse
+    mse = np.mean(-cross_val_score(clf, x_train, y_train, cv=kf,
+                                   scoring='neg_mean_squared_error'))  # sklearn put '-' in front of mse
     R2 = 1-mse/y_train.var()
-    print('min_impurity_decrease : %.3f | mse : %.3f | R2 : %.3f' % (alpha/1000, mse, R2))
+    print('min_impurity_decrease : %.3f | mse : %.3f | R2 : %.3f' %
+          (alpha/1000, mse, R2))
     alphas.append(alpha/1000)
     mses.append(mse)
     R2s.append(R2)
-print('i:', np.argmax(R2s), 'min_impurity_decrease:', alphas[np.argmax(R2s)], 'mse:', mses[np.argmax(R2s)], 'R2:', R2s[np.argmax(R2s)])
+print('i:', np.argmax(R2s), 'min_impurity_decrease:', alphas[np.argmax(
+    R2s)], 'mse:', mses[np.argmax(R2s)], 'R2:', R2s[np.argmax(R2s)])
 params = {'min_impurity_decrease': alphas[np.argmax(R2s)]}
 
 
@@ -90,16 +99,21 @@ for i in reversed(sorted(feature_importances.items(), key=lambda x: x[1])):
 clf.predict(np.array(df1[xcol])[-1].reshape(1, -1))
 
 now = dt.datetime.now()
-filename = 'tree.{0}.{1}.{2} {3} {4}:{5}'.format(df['證券代號'][0], ycol, 'Rsq:'+str(format(round(r2_tree, 5), '.5g')), now.date(), now.hour, now.minute)
-dot_data = tree.export_graphviz(clf, out_file=filename, feature_names=xcol, filled=True, rounded=True, special_characters=True)
+# ":" is reserved character in windows
+f = '~/Public/share/tree/tree.{0}.{1}.{2} {3} {4}h{5}m'.format(df['證券代號'][0], ycol, 'Rsq-'+str(
+    format(round(r2_tree, 5), '.5g')), now.date(), now.hour, now.minute)
+
+filename = os.path.expanduser(f)
+
+dot_data = tree.export_graphviz(
+    clf, out_file=filename, feature_names=xcol, filled=True, rounded=True, special_characters=True)
 
 file = open(filename, 'r')  # READING DOT FILE
 text = file.read()
 src = Source(text)
-src.format = 'dot'
+src.format = 'svg'
 #  save it to svg and open with browser will be much faster
 src.render(filename, view=True)
-
 
 # ----mars----
 # Fit an Earth model
@@ -129,7 +143,7 @@ model.predict([np.array(df1[xcol])[-1]])
 # ----Gradient Tree Boosting----
 
 params = {'n_estimators': 1000, 'max_leaf_nodes': 8, 'subsample': 0.5,
-          'learning_rate': 0.01, 'min_samples_leaf': 1, 'verbose':1, 'min_impurity_decrease':0.05}
+          'learning_rate': 0.01, 'min_samples_leaf': 1, 'verbose': 1, 'min_impurity_decrease': 0.05}
 
 gbt = ensemble.GradientBoostingRegressor(**params)
 gbt.fit(x_train, y_train)
@@ -156,9 +170,9 @@ pyplot.figure(figsize=(12, 6))
 pyplot.subplot(1, 2, 1)
 pyplot.title('Deviance')
 pyplot.plot(np.arange(params['n_estimators']) + 1, gbt.train_score_, 'b-',
-         label='Training Set Deviance')
+            label='Training Set Deviance')
 pyplot.plot(np.arange(params['n_estimators']) + 1, test_score, 'r-',
-         label='Test Set Deviance')
+            label='Test Set Deviance')
 pyplot.legend(loc='upper right')
 pyplot.xlabel('Boosting Iterations')
 pyplot.ylabel('Deviance')
@@ -174,11 +188,12 @@ sorted_idx = np.argsort(feature_importance)
 factors = np.array(list(x_train))[sorted_idx].tolist()
 x = feature_importance[sorted_idx].tolist()
 
-p1 = figure(title="feature_importance", plot_width=1200, plot_height=6000, y_range=factors, x_range=[min(x), max(x)])
+p1 = figure(title="feature_importance", plot_width=1200,
+            plot_height=6000, y_range=factors, x_range=[min(x), max(x)])
 
 p1.segment(0, factors, x, factors, line_width=2)
 
-#output_file("feature_importance.html")
+# output_file("feature_importance.html")
 show(p1)
 # show(vplot(p1, p2))  # open a browser
 
@@ -218,26 +233,33 @@ plt.show()
 df.dtypes
 
 #df2 = df[['年月日', 'lnr20', 'r20Std', 'lnmo']]
-p1 = figure(x_axis_type="datetime", plot_width=1800, plot_height=800, title='compared to {}'.format(ycol))
-p1.grid.grid_line_alpha=0.3
+p1 = figure(x_axis_type="datetime", plot_width=1800,
+            plot_height=800, title='compared to {}'.format(ycol))
+p1.grid.grid_line_alpha = 0.3
 p1.xaxis.axis_label = 'Date'
 p1.yaxis.axis_label = 'value'
 
 circle_size = 1
 p1.circle(df['年月日'], df[ycol], color="#d62728", legend=ycol, size=circle_size)
-p1.circle(df['年月日'], df[factors[0]], color='#1f77b4', legend=factors[0], size=circle_size)
-p1.circle(df['年月日'], df[factors[1]], color="#2ca02c", legend=factors[1], size=circle_size)
-p1.circle(df['年月日'], df[factors[2]], color="#ff7f0e", legend=factors[2], size=circle_size)
-p1.circle(df['年月日'], df[factors[3]], color="#9467bd", legend=factors[3], size=circle_size)
-p1.circle(df['年月日'], df[factors[4]], color="#8c564b", legend=factors[4], size=circle_size)  
-p1.circle(df['年月日'], df[factors[5]], color="#e377c2", legend=factors[5], size=circle_size)
+p1.circle(df['年月日'], df[factors[0]], color='#1f77b4',
+          legend=factors[0], size=circle_size)
+p1.circle(df['年月日'], df[factors[1]], color="#2ca02c",
+          legend=factors[1], size=circle_size)
+p1.circle(df['年月日'], df[factors[2]], color="#ff7f0e",
+          legend=factors[2], size=circle_size)
+p1.circle(df['年月日'], df[factors[3]], color="#9467bd",
+          legend=factors[3], size=circle_size)
+p1.circle(df['年月日'], df[factors[4]], color="#8c564b",
+          legend=factors[4], size=circle_size)
+p1.circle(df['年月日'], df[factors[5]], color="#e377c2",
+          legend=factors[5], size=circle_size)
 
 p1.legend.location = "top_left"
 #output_file("stocks.html", title="stocks.py example")
 show(p1)
 
 
-#----lasso----
+# ----lasso----
 
 model_bic = LassoLarsIC(criterion='bic', verbose=True)
 t1 = time.time()
@@ -261,27 +283,31 @@ model_Larscv.fit(x_train, y_train)
 alpha_Larscv_ = model_Larscv.alpha_
 model_Larscv.score(x_test, y_test)
 
+
 def plot_ic_criterion(model, name, color):
     alpha_ = model.alpha_
     alphas_ = model.alphas_
     criterion_ = model.criterion_
-    pyplot.plot(-alphas_, criterion_, '--', color=color, label='%s criterion' % name)
+    pyplot.plot(-alphas_, criterion_, '--', color=color,
+                label='%s criterion' % name)
     pyplot.axvline(-alpha_, color=color, label='alpha: %s estimate' % name)
     pyplot.xlabel('-alpha')
     pyplot.ylabel('criterion')
+
 
 pyplot.figure()
 plot_ic_criterion(model_aic, 'AIC', 'b')
 plot_ic_criterion(model_bic, 'BIC', 'r')
 pyplot.legend()
-pyplot.title('Information-criterion for model selection (training time %.3fs)'% t_bic)
+pyplot.title(
+    'Information-criterion for model selection (training time %.3fs)' % t_bic)
 pyplot.tight_layout()
 pyplot.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05)
 
 
 # ----SVR----
 
-clf = svm.SVR(kernel='linear') # extremely slow
+clf = svm.SVR(kernel='linear')  # extremely slow
 clf.fit(x_train, np.array([i for i in y_train[ycol]]))
 clf.score(x_test, y_test)
 clf.predict(np.array(x)[-1].reshape(1, -1))
