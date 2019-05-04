@@ -1,3 +1,6 @@
+from common.connection import conn_local_lite, conn_local_pg
+import sqlCommand as sqlc
+import syspath
 import time
 import datetime as dt
 from sklearn import tree
@@ -20,9 +23,6 @@ import pandas as pd
 import numpy as np
 import os
 import sys
-import sqlCommand as sqlc
-from common.connection import conn_local_lite, conn_local_pg
-import syspath
 
 if os.getenv('MY_PYTHON_PKG') not in sys.path:
     sys.path.append(os.getenv('MY_PYTHON_PKG'))
@@ -31,6 +31,7 @@ if os.getenv('MY_PYTHON_PKG') not in sys.path:
 MY_PYTHON_PROJECT = os.getenv('MY_PYTHON_PROJECT')
 if MY_PYTHON_PROJECT not in sys.path:
     sys.path.append(MY_PYTHON_PROJECT)
+
 
 os.chdir(f'{MY_PYTHON_PROJECT}/machine')
 
@@ -49,7 +50,7 @@ rcol = ['{}.調整收盤價'.format(col) for col in ['r5', 'r10', 'r20', 'r40',
 rcol_normalize = ['r5.調整收盤價.nmz', 'r10.調整收盤價.nmz', 'r20.調整收盤價.nmz',
                   'r40.調整收盤價.nmz', 'r60.調整收盤價.nmz', 'r120.調整收盤價.nmz']
 objcol = ['年月日']
-dropcol = objcol + [col for col in rcol if col != ycol]
+dropcol = objcol + rcol_normalize + [col for col in rcol if col != ycol]
 df1 = df.drop(dropcol, 1)
 cols = list(df1)
 xcol = [col for col in cols if col != ycol]

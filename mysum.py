@@ -26,9 +26,20 @@ def timeDelta(s):
     print(s,'timedelta: ', end - start)
     start = end
 
+def timeSpan(func):
+    def wrapper(*args, **kw):
+        print('call %s():' % func.__name__)
+        start = time.time()
+        x = func(*args, **kw)
+        end = time.time()
+        print('Complete in {} second(s)'.format(end-start))
+        return x
+    return wrapper
 
-mops = conn_local_pg('mops')
-cur_mops = mops.cursor()
+
+def mymerge(x, y):
+    m = pd.merge(x, y, on=[col for col in list(x) if col in list(y)], how='outer')
+    return m
 
 
 def s_by(conn: pg.extensions.connection, table: str, col:str) -> pd.DataFrame:
@@ -52,20 +63,10 @@ def s_by_id(conn: pg.extensions.connection, table: str) -> pd.DataFrame:
     return pd.read_sql_query(sql, conn)
 
 
-def timeSpan(func):
-    def wrapper(*args, **kw):
-        print('call %s():' % func.__name__)
-        start = time.time()
-        x = func(*args, **kw)
-        end = time.time()
-        print('Complete in {} second(s)'.format(end-start))
-        return x
-    return wrapper
+## --- read from pg ---
 
-## --- read from sqlite ---
-def mymerge(x, y):
-    m = pd.merge(x, y, on=[col for col in list(x) if col in list(y)], how='outer')
-    return m
+mops = conn_local_pg('mops')
+cur_mops = mops.cursor()
 
 # --- report---
 inc = s_by_companyid(mops, 'ifrs前後-綜合損益表')
@@ -100,6 +101,7 @@ inc['本期綜合損益總額.ma'] = inc['本期綜合損益總額'].rolling(win
 inc['毛利率'] = inc['營業毛利（毛損）']/inc['營業收入']
 inc['營業利益率'] = inc['營業利益（損失）']/inc['營業收入']
 inc['綜合稅後純益率'] = inc['綜合損益總額歸屬於母公司業主']/inc['營業收入']
+
 sql = "SELECT * FROM '{}' WHERE 公司代號 LIKE {}"
 bal = s_by_companyid(mops, 'ifrs前後-資產負債表-一般業').drop(['公司名稱', 'Unnamed: 21', '待註銷股本股數（單位：股）', 'Unnamed: 22'], axis=1)
 bal[['年', '季']]=bal[['年', '季']].astype(str)

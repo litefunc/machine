@@ -50,7 +50,7 @@ rcol = ['{}.調整收盤價'.format(col) for col in ['r5', 'r10', 'r20', 'r40',
 rcol_normalize = ['r5.調整收盤價.nmz', 'r10.調整收盤價.nmz', 'r20.調整收盤價.nmz',
                   'r40.調整收盤價.nmz', 'r60.調整收盤價.nmz', 'r120.調整收盤價.nmz']
 objcol = ['年月日']
-dropcol = objcol + [col for col in rcol if col != ycol]
+dropcol = objcol + rcol_normalize + [col for col in rcol if col != ycol]
 df1 = df.drop(dropcol, 1)
 cols = list(df1)
 xcol = [col for col in cols if col != ycol]
