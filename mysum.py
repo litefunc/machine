@@ -595,6 +595,7 @@ m = m.drop(['證券名稱', '公司名稱'], 1)
 
 m = m.drop_duplicates(['年月日'])
 m = m.dropna(axis=1, how='all')
+m = m.dropna(subset=['證券代號'])
 m = m[~pd.isnull(m['年月日'])]
 m = m.reset_index(drop=True)
 
